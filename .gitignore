@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/.venv/
+# SQLite DB + extracted covers (machine-local)
+backend/data/
+# local config (LIBRARY_ROOT, etc.)
+backend/.env
+.env
+# local handoff/status notes
+docs/HANDOFF.md
+# local planning notes
+docs/PLAN-original.md
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Editor / harness / OS
+# local Claude Code settings + WSL launch config
+.claude/
+.vscode/
+.idea/
+# Windows "mark of the web" alternate-data-stream junk
+*Zone.Identifier
+.DS_Store

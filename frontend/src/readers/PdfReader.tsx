@@ -1,0 +1,262 @@
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import * as pdfjsLib from "pdfjs-dist";
+import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import type { ReaderHandle, Theme } from "./common";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+
+export type PdfMode = "paged" | "scroll";
+
+interface Props {
+  bookId: number;
+  initialPosition: string | null;
+  zoom: number;
+  theme: Theme;
+  mode: PdfMode;
+  onPageChange: (page: number, total: number) => void;
+  jumpTo: number | null;
+}
+
+const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
+  { bookId, initialPosition, zoom, theme, mode, onPageChange, jumpTo },
+  ref
+) {
+  const docRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+  const pageRef = useRef(1);
+  const scrollRootRef = useRef<HTMLDivElement>(null);
+  // Paged-mode single canvas.
+  const pagedCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pagedTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
+  // Scroll-mode per-page canvases + render bookkeeping.
+  const pageCanvases = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const renderedPages = useRef<Set<number>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
+  // Width/height ratio of page 1, used to size scroll slots up-front so the
+  // page placeholders don't all start short and jump as they render.
+  const [pageAspect, setPageAspect] = useState(0.72);
+  const [basePageSize, setBasePageSize] = useState({ width: 720, height: 1000 });
+  const bg = theme === "light" ? "#525659" : "#111";
+
+  useImperativeHandle(ref, () => ({
+    currentPosition: () => String(pageRef.current),
+  }));
+
+  // ---------- shared load ----------
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const doc = await pdfjsLib.getDocument(`/api/books/${bookId}/file`)
+          .promise;
+        if (cancelled) return;
+        docRef.current = doc;
+        setTotal(doc.numPages);
+        try {
+          const p1 = await doc.getPage(1);
+          const vp = p1.getViewport({ scale: 1 });
+          setPageAspect(vp.width / vp.height);
+          setBasePageSize({ width: vp.width, height: vp.height });
+        } catch {
+          /* keep default aspect */
+        }
+        const start = initialPosition ? parseInt(initialPosition, 10) : 1;
+        pageRef.current = Number.isFinite(start)
+          ? Math.min(Math.max(1, start), doc.numPages)
+          : 1;
+        onPageChange(pageRef.current, doc.numPages);
+      } catch (e) {
+        setError(
+          `Could not open this PDF: ${(e as Error).message}. The file may be corrupt.`
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+      pagedTaskRef.current?.cancel();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId]);
+
+  // ---------- paged mode ----------
+  const renderPaged = async (num: number) => {
+    const doc = docRef.current;
+    const canvas = pagedCanvasRef.current;
+    if (!doc || !canvas) return;
+    num = Math.min(Math.max(1, num), doc.numPages);
+    pageRef.current = num;
+    const page = await doc.getPage(num);
+    const viewport = page.getViewport({ scale: zoom });
+    const dpr = window.devicePixelRatio || 1;
+    const renderViewport = page.getViewport({ scale: zoom * dpr });
+    const ctx = canvas.getContext("2d")!;
+    canvas.width = renderViewport.width;
+    canvas.height = renderViewport.height;
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+    pagedTaskRef.current?.cancel();
+    const task = page.render({ canvasContext: ctx, viewport: renderViewport });
+    pagedTaskRef.current = task;
+    try {
+      await task.promise;
+    } catch (e) {
+      if ((e as Error)?.name !== "RenderingCancelledException") throw e;
+    }
+    onPageChange(num, doc.numPages);
+  };
+
+  useEffect(() => {
+    if (mode === "paged" && docRef.current) renderPaged(pageRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, zoom, total]);
+
+  // ---------- scroll mode ----------
+  const renderScrollPage = async (num: number) => {
+    const doc = docRef.current;
+    const canvas = pageCanvases.current.get(num);
+    if (!doc || !canvas || renderedPages.current.has(num)) return;
+    renderedPages.current.add(num);
+    const page = await doc.getPage(num);
+    const viewport = page.getViewport({ scale: zoom });
+    const dpr = window.devicePixelRatio || 1;
+    const renderViewport = page.getViewport({ scale: zoom * dpr });
+    const ctx = canvas.getContext("2d")!;
+    canvas.width = renderViewport.width;
+    canvas.height = renderViewport.height;
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+    await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+  };
+
+  useEffect(() => {
+    if (mode !== "scroll" || !docRef.current || !scrollRootRef.current) return;
+    const root = scrollRootRef.current;
+    renderedPages.current.clear();
+
+    // Lazily render pages as they approach the viewport.
+    const lazy = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            const n = Number((e.target as HTMLElement).dataset.page);
+            renderScrollPage(n);
+          }
+        }
+      },
+      { root, rootMargin: "600px 0px" }
+    );
+    // Track the most-visible page for progress saving.
+    const tracker = new IntersectionObserver(
+      (entries) => {
+        let best = pageRef.current;
+        let bestRatio = 0;
+        for (const e of entries) {
+          if (e.intersectionRatio > bestRatio) {
+            bestRatio = e.intersectionRatio;
+            best = Number((e.target as HTMLElement).dataset.page);
+          }
+        }
+        if (bestRatio > 0 && best !== pageRef.current) {
+          pageRef.current = best;
+          onPageChange(best, docRef.current!.numPages);
+        }
+      },
+      { root, threshold: [0.1, 0.25, 0.5, 0.75] }
+    );
+    const slots = root.querySelectorAll(".pdf-page-slot");
+    slots.forEach((s) => {
+      lazy.observe(s);
+      tracker.observe(s);
+    });
+    // Restore scroll to the saved page.
+    const target = root.querySelector(
+      `.pdf-page-slot[data-page="${pageRef.current}"]`
+    ) as HTMLElement | null;
+    if (target) root.scrollTop = target.offsetTop;
+
+    return () => {
+      lazy.disconnect();
+      tracker.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, total, zoom]);
+
+  // ---------- external jump ----------
+  useEffect(() => {
+    if (jumpTo == null) return;
+    if (mode === "paged") renderPaged(jumpTo);
+    else {
+      const root = scrollRootRef.current;
+      const target = root?.querySelector(
+        `.pdf-page-slot[data-page="${jumpTo}"]`
+      ) as HTMLElement | null;
+      if (target && root) root.scrollTop = target.offsetTop;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTo]);
+
+  // ---------- keyboard (paged only) ----------
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (mode !== "paged") return;
+      if (e.key === "ArrowRight" || e.key === "PageDown")
+        renderPaged(pageRef.current + 1);
+      if (e.key === "ArrowLeft" || e.key === "PageUp")
+        renderPaged(pageRef.current - 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  if (error) return <div className="reader-error">{error}</div>;
+
+  if (mode === "scroll") {
+    return (
+      <div className="pdf-scroll" ref={scrollRootRef} style={{ background: bg }}>
+        {Array.from({ length: total }, (_, i) => i + 1).map((n) => (
+          <div
+            key={n}
+            className="pdf-page-slot"
+            data-page={n}
+            style={{
+              aspectRatio: String(pageAspect),
+              minHeight: "unset",
+              width: `${basePageSize.width * zoom}px`,
+            }}
+            ref={(el) => {
+              const c = el?.querySelector("canvas") as HTMLCanvasElement | null;
+              if (c) pageCanvases.current.set(n, c);
+            }}
+          >
+            <canvas />
+            <span className="pdf-page-num">{n}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="pdf-viewport"
+      style={{ background: bg }}
+      onClick={(e) => {
+        const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
+        if (x > e.currentTarget.clientWidth / 2)
+          renderPaged(pageRef.current + 1);
+        else renderPaged(pageRef.current - 1);
+      }}
+    >
+      <canvas ref={pagedCanvasRef} />
+    </div>
+  );
+});
+
+export default PdfReader;
