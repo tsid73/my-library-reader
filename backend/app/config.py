@@ -39,7 +39,11 @@ IGNORED_EXTENSIONS = {".mobi", ".azw3"}
 # Folders panel); only the initial DEFAULT_ROOT below is a single seed.
 FUTURE_AUDIO_EXTENSIONS = {".mp3", ".m4b", ".m4a", ".opus"}
 
-BACKEND_HOST = "127.0.0.1"
+# Defaults to localhost-only (see the security note in the README). Set
+# BACKEND_HOST=0.0.0.0 to listen on all interfaces, e.g. to reach the app from
+# other machines on a trusted LAN. The app has no authentication, so only do
+# this on a network you trust.
+BACKEND_HOST = os.environ.get("BACKEND_HOST", "127.0.0.1").strip()
 BACKEND_PORT = int(os.environ.get("BACKEND_PORT", "8011"))
 BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
 FRONTEND_URL = "http://localhost:5173"
