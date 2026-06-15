@@ -10,7 +10,10 @@
     "dev:web": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "start": "npm run build && cross-env MLR_SERVE_SPA=1 npm run dev:api",
-    "test": "cd backend && python3 -m pytest -q && npm --prefix frontend test"
+    "test": "(cd backend && python3 -m pytest -q) && npm --prefix frontend test"
+  },
+  "overrides": {
+    "shell-quote": "^1.8.4"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
