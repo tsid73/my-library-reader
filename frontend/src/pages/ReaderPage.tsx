@@ -40,6 +40,18 @@ export default function ReaderPage() {
   // clicking the same bookmark twice, or jumping to the page you're on) still
   // re-triggers the reader's jump effect.
   const requestPdfJump = (page: number) => setPdfJump({ page });
+  // Paged-mode page box: edit freely and jump only on Enter or blur. Jumping on
+  // every keystroke would render each intermediate page while you type (e.g.
+  // 1, then 15, then 150 for "150").
+  const [pageInput, setPageInput] = useState("1");
+  useEffect(() => {
+    setPageInput(String(pageInfo.page || 1));
+  }, [pageInfo.page]);
+  const commitPageInput = () => {
+    const n = parseInt(pageInput, 10);
+    if (Number.isFinite(n)) requestPdfJump(n);
+    else setPageInput(String(pageInfo.page || 1));
+  };
   const [jumpCfi, setJumpCfi] = useState<string | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [showBookmarks, setShowBookmarks] = useState(false);
@@ -230,8 +242,13 @@ export default function ReaderPage() {
                     type="number"
                     min={1}
                     max={pageInfo.total || undefined}
-                    value={pageInfo.page || 1}
-                    onChange={(e) => requestPdfJump(Number(e.target.value))}
+                    value={pageInput}
+                    onChange={(e) => setPageInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter")
+                        (e.target as HTMLInputElement).blur();
+                    }}
+                    onBlur={commitPageInput}
                   />
                   <span className="ctrl-value">/ {pageInfo.total}</span>
                   <button
