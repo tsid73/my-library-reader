@@ -106,6 +106,8 @@ def unassign_book(
 
 @router.post("/categories/regenerate")
 def regenerate(session: Session = Depends(get_session)):
-    created = categorize.regenerate(session, only_if_empty=False)
+    # replace=True clears existing auto/manual category links and rebuilds from
+    # the classifier, so books mis-categorized by an older classifier get fixed.
+    created = categorize.regenerate(session, replace=True)
     search.rebuild_index(session)
     return {"links_created": created}

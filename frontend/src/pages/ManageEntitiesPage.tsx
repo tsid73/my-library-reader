@@ -1,7 +1,7 @@
 import Swal from "sweetalert2";
 import { useCallback, useEffect, useState } from "react";
 import { del, get, patch, post } from "../api/client";
-import { confirmAction, promptText, toastError } from "../lib/alerts";
+import { confirmAction, promptText, toastError, toastOk } from "../lib/alerts";
 import BookCard from "../components/BookCard";
 import MetadataModal from "../components/MetadataModal";
 import type { BookCard as BookCardT, BrowseResponse, Entity } from "../types";
@@ -43,6 +43,26 @@ export default function ManageEntitiesPage({ kind, label }: Props) {
     try {
       await post(`/${kind}`, { name });
       setNewName("");
+      load();
+    } catch (e) {
+      toastError((e as Error).message);
+    }
+  };
+
+  const regenerate = async () => {
+    if (
+      !(await confirmAction(
+        "Regenerate categories?",
+        "Re-assigns every book's categories from its title and folder, replacing the current category assignments. Your folders, files, authors, and other metadata are untouched.",
+        "Regenerate"
+      ))
+    )
+      return;
+    try {
+      const res = await post<{ links_created: number }>(
+        "/categories/regenerate"
+      );
+      toastOk(`Regenerated categories (${res.links_created} links).`);
       load();
     } catch (e) {
       toastError((e as Error).message);
@@ -127,6 +147,15 @@ export default function ManageEntitiesPage({ kind, label }: Props) {
         <button className="btn primary" onClick={create}>
           Add {label.toLowerCase()}
         </button>
+        {kind === "categories" && (
+          <button
+            className="btn"
+            onClick={regenerate}
+            title="Re-classify every book into categories from titles and folders"
+          >
+            Regenerate
+          </button>
+        )}
       </div>
 
       {loading && <p className="hint">Loading…</p>}
