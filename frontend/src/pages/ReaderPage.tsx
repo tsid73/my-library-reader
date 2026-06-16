@@ -35,7 +35,11 @@ export default function ReaderPage() {
   );
   const [pageInfo, setPageInfo] = useState({ page: 0, total: 0 });
   const [epubLabel, setEpubLabel] = useState("");
-  const [jumpPage, setJumpPage] = useState<number | null>(null);
+  const [pdfJump, setPdfJump] = useState<{ page: number } | null>(null);
+  // Wrap each jump in a fresh object so re-selecting the same page (e.g.
+  // clicking the same bookmark twice, or jumping to the page you're on) still
+  // re-triggers the reader's jump effect.
+  const requestPdfJump = (page: number) => setPdfJump({ page });
   const [jumpCfi, setJumpCfi] = useState<string | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [showBookmarks, setShowBookmarks] = useState(false);
@@ -85,6 +89,36 @@ export default function ReaderPage() {
     }, 800);
   };
 
+  // Flush the latest position when the tab is hidden or closed. The debounced
+  // save above can otherwise be dropped if you close the reader within 800ms of
+  // the last move; `keepalive` lets the request finish as the page unloads.
+  useEffect(() => {
+    if (!hasProgress) return;
+    const flush = () => {
+      const pos = handleRef.current?.currentPosition();
+      if (!pos) return;
+      try {
+        fetch(`/api/books/${bookId}/progress`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ position: pos }),
+          keepalive: true,
+        });
+      } catch {
+        /* best effort */
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [hasProgress, bookId]);
+
   const addBookmark = async () => {
     const pos = handleRef.current?.currentPosition();
     if (!pos) return;
@@ -112,7 +146,7 @@ export default function ReaderPage() {
       await del(`/books/${bookId}/reading-state`);
       setBookmarks([]);
       setInitialPos(null);
-      setJumpPage(1);
+      requestPdfJump(1);
       setJumpCfi(null);
       setEpubLabel("");
       setResetKey((v) => v + 1);
@@ -122,7 +156,7 @@ export default function ReaderPage() {
   };
 
   const jumpToBookmark = (pos: string) => {
-    if (book?.format === "pdf") setJumpPage(parseInt(pos, 10));
+    if (book?.format === "pdf") requestPdfJump(parseInt(pos, 10));
     else setJumpCfi(pos + "#" + Date.now());
   };
 
@@ -187,7 +221,7 @@ export default function ReaderPage() {
                 <div className="ctrl-group">
                   <button
                     className="icon-btn"
-                    onClick={() => setJumpPage(pageInfo.page - 1)}
+                    onClick={() => requestPdfJump(pageInfo.page - 1)}
                   >
                     Prev
                   </button>
@@ -197,12 +231,12 @@ export default function ReaderPage() {
                     min={1}
                     max={pageInfo.total || undefined}
                     value={pageInfo.page || 1}
-                    onChange={(e) => setJumpPage(Number(e.target.value))}
+                    onChange={(e) => requestPdfJump(Number(e.target.value))}
                   />
                   <span className="ctrl-value">/ {pageInfo.total}</span>
                   <button
                     className="icon-btn"
-                    onClick={() => setJumpPage(pageInfo.page + 1)}
+                    onClick={() => requestPdfJump(pageInfo.page + 1)}
                   >
                     Next
                   </button>
@@ -343,7 +377,7 @@ export default function ReaderPage() {
               zoom={zoom}
               theme={theme}
               mode={pdfMode}
-              jumpTo={jumpPage}
+              jumpTo={pdfJump}
               onPageChange={(page, total) => {
                 setPageInfo({ page, total });
                 saveProgress(String(page));

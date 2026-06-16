@@ -20,7 +20,8 @@ interface Props {
   theme: Theme;
   mode: PdfMode;
   onPageChange: (page: number, total: number) => void;
-  jumpTo: number | null;
+  // Wrapped in an object so the same target page re-triggers a jump.
+  jumpTo: { page: number } | null;
 }
 
 const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
@@ -222,8 +223,8 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
   // ---------- external jump ----------
   useEffect(() => {
     if (jumpTo == null) return;
-    if (mode === "paged") renderPaged(jumpTo);
-    else scrollToPage(jumpTo);
+    if (mode === "paged") renderPaged(jumpTo.page);
+    else scrollToPage(jumpTo.page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpTo]);
 
@@ -238,8 +239,10 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // Re-bind on zoom so arrow-key navigation renders at the current zoom
+    // (renderPaged closes over zoom).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [mode, zoom]);
 
   if (error) return <div className="reader-error">{error}</div>;
 
