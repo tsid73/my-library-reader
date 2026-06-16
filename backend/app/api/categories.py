@@ -90,6 +90,7 @@ def assign_book(
     if not session.get(BookCategory, (book_id, category_id)):
         session.add(BookCategory(book_id=book_id, category_id=category_id))
         session.commit()
+        search.rebuild_index(session)
     return {"ok": True}
 
 
@@ -101,6 +102,7 @@ def unassign_book(
     if link:
         session.delete(link)
         session.commit()
+        search.rebuild_index(session)
     return {"ok": True}
 
 

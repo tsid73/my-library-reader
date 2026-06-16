@@ -85,6 +85,9 @@ def set_categories(
         if n.strip()
     ]
     taxonomy.set_book_categories(session, book_id, ids)
+    # Keep the FTS category column in sync so search reflects the edit (authors
+    # already do this; categories were previously missed).
+    search.rebuild_index(session)
     return book_detail(get_book(book_id, session), session)
 
 
