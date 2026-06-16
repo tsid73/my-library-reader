@@ -36,6 +36,8 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
   // Scroll-mode per-page canvases + render bookkeeping.
   const pageCanvases = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const renderedPages = useRef<Set<number>>(new Set());
+  // Live intersection ratio per page; the most-visible page is the one we save.
+  const pageRatios = useRef<Map<number, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   // Width/height ratio of page 1, used to size scroll slots up-front so the
@@ -57,9 +59,9 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
           .promise;
         if (cancelled) return;
         docRef.current = doc;
-        setTotal(doc.numPages);
         try {
           const p1 = await doc.getPage(1);
+          if (cancelled) return;
           const vp = p1.getViewport({ scale: 1 });
           setPageAspect(vp.width / vp.height);
           setBasePageSize({ width: vp.width, height: vp.height });
@@ -70,6 +72,10 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
         pageRef.current = Number.isFinite(start)
           ? Math.min(Math.max(1, start), doc.numPages)
           : 1;
+        // Set total LAST: it triggers the render/restore effects, which must
+        // already see the restored pageRef and the real page geometry to land
+        // on the right page instead of page 1 with a default aspect ratio.
+        setTotal(doc.numPages);
         onPageChange(pageRef.current, doc.numPages);
       } catch (e) {
         setError(
@@ -134,10 +140,32 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
     await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
   };
 
+  // Bring a page to the top of the scroll view. Re-asserts across frames so the
+  // position stays correct after the target page renders and its slot settles to
+  // its real height (otherwise the scroll drifts by ~a page).
+  const scrollToPage = (num: number) => {
+    const root = scrollRootRef.current;
+    if (!root) return;
+    pageRef.current = num;
+    renderScrollPage(num);
+    const align = () => {
+      const target = root.querySelector(
+        `.pdf-page-slot[data-page="${num}"]`
+      ) as HTMLElement | null;
+      if (target) root.scrollTop = target.offsetTop;
+    };
+    align();
+    requestAnimationFrame(() => {
+      align();
+      requestAnimationFrame(align);
+    });
+  };
+
   useEffect(() => {
     if (mode !== "scroll" || !docRef.current || !scrollRootRef.current) return;
     const root = scrollRootRef.current;
     renderedPages.current.clear();
+    pageRatios.current.clear();
 
     // Lazily render pages as they approach the viewport.
     const lazy = new IntersectionObserver(
@@ -151,15 +179,22 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
       },
       { root, rootMargin: "600px 0px" }
     );
-    // Track the most-visible page for progress saving.
+    // Track the most-visible page for progress saving. Each callback only
+    // carries the slots whose visibility changed, so we keep a running ratio map
+    // of all pages and pick the global maximum — otherwise the saved page lags
+    // by one as you scroll.
     const tracker = new IntersectionObserver(
       (entries) => {
+        for (const e of entries) {
+          const n = Number((e.target as HTMLElement).dataset.page);
+          pageRatios.current.set(n, e.isIntersecting ? e.intersectionRatio : 0);
+        }
         let best = pageRef.current;
         let bestRatio = 0;
-        for (const e of entries) {
-          if (e.intersectionRatio > bestRatio) {
-            bestRatio = e.intersectionRatio;
-            best = Number((e.target as HTMLElement).dataset.page);
+        for (const [n, ratio] of pageRatios.current) {
+          if (ratio > bestRatio) {
+            bestRatio = ratio;
+            best = n;
           }
         }
         if (bestRatio > 0 && best !== pageRef.current) {
@@ -167,7 +202,7 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
           onPageChange(best, docRef.current!.numPages);
         }
       },
-      { root, threshold: [0.1, 0.25, 0.5, 0.75] }
+      { root, threshold: [0, 0.25, 0.5, 0.75, 1] }
     );
     const slots = root.querySelectorAll(".pdf-page-slot");
     slots.forEach((s) => {
@@ -175,10 +210,7 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
       tracker.observe(s);
     });
     // Restore scroll to the saved page.
-    const target = root.querySelector(
-      `.pdf-page-slot[data-page="${pageRef.current}"]`
-    ) as HTMLElement | null;
-    if (target) root.scrollTop = target.offsetTop;
+    scrollToPage(pageRef.current);
 
     return () => {
       lazy.disconnect();
@@ -191,13 +223,7 @@ const PdfReader = forwardRef<ReaderHandle, Props>(function PdfReader(
   useEffect(() => {
     if (jumpTo == null) return;
     if (mode === "paged") renderPaged(jumpTo);
-    else {
-      const root = scrollRootRef.current;
-      const target = root?.querySelector(
-        `.pdf-page-slot[data-page="${jumpTo}"]`
-      ) as HTMLElement | null;
-      if (target && root) root.scrollTop = target.offsetTop;
-    }
+    else scrollToPage(jumpTo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpTo]);
 
