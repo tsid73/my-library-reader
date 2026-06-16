@@ -50,6 +50,32 @@ npm start         # builds the frontend, then serves the whole app from :8011
 
 Then open **http://localhost:8011**.
 
+### Share on your local network (optional)
+
+By default the app binds to `127.0.0.1` (this machine only). To reach it from
+other devices on a network you trust, bind to all interfaces with the
+`BACKEND_HOST` environment variable:
+
+```bash
+BACKEND_HOST=0.0.0.0 npm start
+```
+
+Then open `http://<this-machine-ip>:8011` from another device.
+
+> ⚠️ The app has **no authentication** and serves files from the folders you
+> add. Only do this on a network you trust — never expose the port to the
+> public internet.
+
+> **WSL note:** if you run this inside WSL2 with default (NAT) networking,
+> binding `0.0.0.0` isn't enough on its own — Windows only auto-forwards
+> `localhost`. Either enable WSL [mirrored networking][wsl-mirrored], or forward
+> the port from Windows to the WSL VM with a reliable TCP proxy. Avoid
+> `netsh interface portproxy` for this: it drops reused/concurrent connections,
+> so the library loads but filters, folder management, and opening files fail
+> from other machines.
+
+[wsl-mirrored]: https://learn.microsoft.com/windows/wsl/networking#mirrored-mode-networking
+
 ### Other commands
 
 | Command | What it does |
