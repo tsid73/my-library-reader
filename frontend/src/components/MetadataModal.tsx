@@ -178,6 +178,30 @@ export default function MetadataModal({
             <label className="field">
               <span>Title</span>
               <input value={title} onChange={(e) => setTitle(e.target.value)} />
+              {detail && (
+                <div className="title-sources">
+                  <span className="title-source-label">Use:</span>
+                  <button
+                    type="button"
+                    className="btn small"
+                    title={detail.cleaned_title}
+                    onClick={() => setTitle(detail.cleaned_title)}
+                  >
+                    File name
+                  </button>
+                  {detail.meta_title &&
+                    detail.meta_title !== detail.cleaned_title && (
+                      <button
+                        type="button"
+                        className="btn small"
+                        title={detail.meta_title}
+                        onClick={() => setTitle(detail.meta_title!)}
+                      >
+                        Metadata
+                      </button>
+                    )}
+                </div>
+              )}
             </label>
             <TagInput
               label="Authors"

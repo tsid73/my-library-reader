@@ -76,6 +76,7 @@ def book_detail(book: Book, session: Session) -> dict:
             "abs_path": book.abs_path,
             "size": book.size,
             "cleaned_title": book.cleaned_title,
+            "meta_title": book.meta_title,
             "cleaned_author": book.cleaned_author,
             "edited_title": book.edited_title,
             "edited_author": book.edited_author,

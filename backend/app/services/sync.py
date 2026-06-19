@@ -280,8 +280,9 @@ class SyncManager:
             )
             return
 
-        if ex.title:
-            book.cleaned_title = ex.title
+        # Keep the filename-derived cleaned_title as the default; store the
+        # embedded title separately so the user can opt into it from Edit.
+        book.meta_title = ex.title or None
         if ex.author and not book.cleaned_author:
             book.cleaned_author = ex.author
 

@@ -38,7 +38,8 @@ class Book(SQLModel, table=True):
     size: int
     mtime: float
     file_hash: str = Field(index=True)
-    cleaned_title: str
+    cleaned_title: str  # filename-derived title (the default shown)
+    meta_title: Optional[str] = None  # embedded EPUB/PDF title, if any
     cleaned_author: Optional[str] = None
     edited_title: Optional[str] = None
     edited_author: Optional[str] = None

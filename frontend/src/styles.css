@@ -1004,6 +1004,17 @@ select:focus,
   background: var(--surface-2);
   box-shadow: var(--shadow-sm);
 }
+.title-sources {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.title-source-label {
+  font-size: 12px;
+  color: var(--muted);
+}
 .tag-input {
   display: flex;
   flex-wrap: wrap;

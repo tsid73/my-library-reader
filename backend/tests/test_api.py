@@ -86,13 +86,22 @@ def test_browse_authors_and_categories(client, engine, tmp_path):
 
 def test_fts_search_prefix_and_ranking(client, engine, tmp_path):
     seed(engine, tmp_path)
-    # prefix match: "Ja" should find "Jane Doe"
+    # prefix match: "Ja" should find the "Jane Doe - First Book" title
     hits = client.get("/api/search", params={"q": "Ja"}).json()["books"]
-    assert any("First Book" == b["title"] for b in hits)
+    assert any("First Book" in b["title"] for b in hits)
     # multi-term AND
     assert client.get("/api/search", params={"q": "first book"}).json()["books"]
     # path is searchable
     assert client.get("/api/search", params={"q": "Web"}).json()["books"]
+
+
+def test_book_detail_exposes_titles(client, engine, tmp_path):
+    seed(engine, tmp_path)
+    with Session(engine) as s:
+        bid = s.exec(select(Book).where(Book.format == "epub")).one().id
+    detail = client.get(f"/api/books/{bid}").json()
+    assert "meta_title" in detail
+    assert "cleaned_title" in detail  # filename-derived default
 
 
 def test_epub_locations_roundtrip(client, engine, tmp_path):

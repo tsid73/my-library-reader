@@ -96,8 +96,9 @@ def test_rescan_single_root(client, engine, tmp_path):
         time.sleep(0.1)
     titles = {b["title"] for s in client.get("/api/library").json()["sections"]
               for b in s["books"]}
-    assert "Algorithms" in titles
-    assert "Solo" not in titles  # other root was not scanned
+    # Titles default to the filename now (e.g. "algorithms", not "Algorithms").
+    assert "algorithms" in titles
+    assert "solo" not in titles  # other root was not scanned
 
 
 # ---- export / import ----

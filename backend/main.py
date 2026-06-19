@@ -44,6 +44,30 @@ def seed_taxonomy() -> None:
         )
 
 
+def backfill_titles() -> None:
+    """One-time: when the meta_title column is first added, re-derive every
+    book's cleaned_title from its filename so the default title is the file
+    name. The old (often metadata) title was preserved into meta_title by the
+    migration; drop it when it's identical to the file title."""
+    if not db.titles_need_backfill:
+        return
+    from app.services.titles import clean_filename
+    from app.models import Book
+    import os
+
+    with Session(db.engine) as session:
+        books = session.exec(select(Book)).all()
+        for book in books:
+            file_title = clean_filename(os.path.splitext(book.filename)[0])[0]
+            if book.meta_title and book.meta_title == file_title:
+                book.meta_title = None
+            book.cleaned_title = file_title
+            session.add(book)
+        session.commit()
+    db.titles_need_backfill = False
+    print(f"Backfilled filename titles for {len(books)} books.")
+
+
 def rebuild_search_index() -> None:
     """Populate the FTS index at startup so search works before the first
     sync (e.g. after upgrading an existing database)."""
@@ -85,6 +109,7 @@ if __name__ == "__main__":
     config.ensure_dirs()
     db.init_engine()
     db.create_tables()
+    backfill_titles()
     seed_default_root()
     seed_taxonomy()
     rebuild_search_index()

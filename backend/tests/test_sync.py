@@ -31,6 +31,61 @@ def setup_library(tmp_path):
     return lib
 
 
+def test_backfill_titles_rederives_from_filename(engine):
+    """The one-time backfill (run when meta_title is first added) re-derives
+    cleaned_title from the filename and keeps the old title as meta_title."""
+    import main
+
+    with Session(engine) as s:
+        root = RootFolder(path="/tmp/x")
+        s.add(root)
+        s.commit()
+        s.refresh(root)
+        s.add(
+            Book(
+                root_id=root.id,
+                abs_path="/tmp/x/weird_name.pdf",
+                folder_path="/tmp/x",
+                filename="weird_name.pdf",
+                format="pdf",
+                size=1,
+                mtime=1.0,
+                file_hash="h",
+                cleaned_title="Old Meta Title",  # pre-migration value
+                meta_title="Old Meta Title",  # copied by the SQL migration
+            )
+        )
+        s.commit()
+
+    from app import db as appdb
+
+    appdb.titles_need_backfill = True
+    main.backfill_titles()
+
+    with Session(engine) as s:
+        b = s.exec(select(Book)).one()
+        assert b.cleaned_title == "weird name"
+        assert b.meta_title == "Old Meta Title"
+    assert appdb.titles_need_backfill is False
+
+
+def test_file_vs_metadata_title(engine, tmp_path):
+    """Default title comes from the filename; embedded title is kept in
+    meta_title and the displayed title defaults to the file name."""
+    lib = tmp_path / "library"
+    lib.mkdir()
+    make_pdf(lib / "oddname.pdf", title="Real Embedded Title")
+    with Session(engine) as s:
+        s.add(RootFolder(path=str(lib)))
+        s.commit()
+    run_sync(engine)
+    with Session(engine) as s:
+        book = s.exec(select(Book).where(Book.filename == "oddname.pdf")).one()
+        assert book.cleaned_title == "oddname"
+        assert book.meta_title == "Real Embedded Title"
+        assert book.display_title == "oddname"  # default is the file name
+
+
 def test_full_sync_cycle(engine, tmp_path):
     lib = setup_library(tmp_path)
     with Session(engine) as s:
@@ -47,14 +102,18 @@ def test_full_sync_cycle(engine, tmp_path):
         books = {b.filename: b for b in s.exec(select(Book)).all()}
         assert len(books) == 4
         epub = books["Brandon Sanderson - Elantris.epub"]
-        # Embedded metadata wins over filename parse
-        assert epub.cleaned_title == "Elantris"
-        assert epub.cleaned_author == "Brandon Sanderson"
+        # cleaned_title is filename-derived (the default). Here both sides of the
+        # " - " look like names, so the cleaner keeps the whole filename; the
+        # embedded title is kept separately in meta_title for the picker.
+        assert epub.cleaned_title == "Brandon Sanderson - Elantris"
+        assert epub.meta_title == "Elantris"
+        assert epub.cleaned_author == "Brandon Sanderson"  # from embedded data
         # Covers are extracted lazily now, so sync only marks them pending.
         assert epub.cover_state == "pending"
         assert epub.cover_path is None
         pdf = books["algorithms.pdf"]
-        assert pdf.cleaned_title == "Algorithms"  # embedded PDF title
+        assert pdf.cleaned_title == "algorithms"  # filename-derived default
+        assert pdf.meta_title == "Algorithms"  # embedded PDF title kept
         assert pdf.cover_state == "pending"
         txt = books["notes.txt"]
         assert txt.cover_state == "none"  # no cover possible

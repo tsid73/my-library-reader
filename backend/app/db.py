@@ -42,14 +42,26 @@ def init_engine(db_path=None):
 _ADDED_COLUMNS = {
     "cover_state": "ALTER TABLE books ADD COLUMN cover_state TEXT DEFAULT 'pending'",
     "epub_locations": "ALTER TABLE books ADD COLUMN epub_locations TEXT",
+    "meta_title": "ALTER TABLE books ADD COLUMN meta_title TEXT",
 }
+
+# Set when the meta_title column was just created, so the app knows to re-derive
+# filename titles for pre-existing rows (see main.backfill_titles).
+titles_need_backfill = False
 
 
 def _migrate(conn) -> None:
+    global titles_need_backfill
     existing = {row[1] for row in conn.execute(text("PRAGMA table_info(books)"))}
     for column, ddl in _ADDED_COLUMNS.items():
         if column not in existing:
             conn.execute(text(ddl))
+    if "meta_title" not in existing:
+        # Preserve the currently-shown (often metadata) title as the metadata
+        # choice; main.backfill_titles() then re-derives cleaned_title from the
+        # filename so the default becomes the file name.
+        conn.execute(text("UPDATE books SET meta_title = cleaned_title"))
+        titles_need_backfill = True
     # Backfill cover_state for rows that predate the column so already-extracted
     # covers aren't needlessly re-rendered.
     if "cover_state" not in existing:

@@ -21,7 +21,8 @@ export interface BookCard {
 export interface BookDetail extends BookCard {
   abs_path: string;
   size: number;
-  cleaned_title: string;
+  cleaned_title: string; // filename-derived title (default)
+  meta_title: string | null; // embedded EPUB/PDF title, if any
   cleaned_author: string | null;
   edited_title: string | null;
   edited_author: string | null;

@@ -49,7 +49,14 @@ def rebuild_index(session: Session) -> None:
             ),
             {
                 "r": book.id,
-                "t": book.edited_title or book.cleaned_title or "",
+                # Index both the shown title and the embedded title so a book is
+                # findable by either.
+                "t": " ".join(
+                    filter(
+                        None,
+                        [book.edited_title or book.cleaned_title, book.meta_title],
+                    )
+                ),
                 "a": authors.get(book.id) or book.cleaned_author or "",
                 "s": "",
                 "c": categories.get(book.id, ""),
