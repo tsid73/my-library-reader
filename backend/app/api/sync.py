@@ -34,7 +34,7 @@ def stop_sync():
 
 @router.get("/sync/status")
 def sync_status(session: Session = Depends(get_session)):
-    data = sync_manager.progress.to_dict()
+    data = sync_manager.get_progress_dict()
     roots = _root_paths(session)
     # Sanitize absolute paths so the UI never shows /mnt/d/... machine paths.
     if data.get("current_folder"):

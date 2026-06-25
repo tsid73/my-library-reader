@@ -34,6 +34,24 @@ def _category_names(session: Session) -> Dict[int, str]:
     return {bid: " ".join(v) for bid, v in names.items()}
 
 
+def _author_names_for_book(session: Session, book_id: int) -> str:
+    names = session.exec(
+        select(Author.name).join(
+            BookAuthor, col(Author.id) == col(BookAuthor.author_id)
+        ).where(BookAuthor.book_id == book_id)
+    ).all()
+    return " ".join(names)
+
+
+def _category_names_for_book(session: Session, book_id: int) -> str:
+    names = session.exec(
+        select(Category.name).join(
+            BookCategory, col(Category.id) == col(BookCategory.category_id)
+        ).where(BookCategory.book_id == book_id)
+    ).all()
+    return " ".join(names)
+
+
 def rebuild_index(session: Session) -> None:
     if not db.fts5_available:
         return
@@ -58,11 +76,40 @@ def rebuild_index(session: Session) -> None:
                     )
                 ),
                 "a": authors.get(book.id) or book.cleaned_author or "",
-                "s": "",
+                "s": book.edited_series or "",
                 "c": categories.get(book.id, ""),
                 "p": book.abs_path or "",
             },
         )
+    session.commit()
+
+
+def update_index_for_book(session: Session, book: Book) -> None:
+    if not db.fts5_available:
+        return
+    conn = session.connection()
+    conn.execute(text("DELETE FROM books_fts WHERE rowid = :r"), {"r": book.id})
+    author_str = _author_names_for_book(session, book.id)
+    category_str = _category_names_for_book(session, book.id)
+    conn.execute(
+        text(
+            "INSERT INTO books_fts(rowid, title, author, series, category, path) "
+            "VALUES (:r, :t, :a, :s, :c, :p)"
+        ),
+        {
+            "r": book.id,
+            "t": " ".join(
+                filter(
+                    None,
+                    [book.edited_title or book.cleaned_title, book.meta_title],
+                )
+            ),
+            "a": author_str or book.cleaned_author or "",
+            "s": book.edited_series or "",
+            "c": category_str,
+            "p": book.abs_path or "",
+        },
+    )
     session.commit()
 
 

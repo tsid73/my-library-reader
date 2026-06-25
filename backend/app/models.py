@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy import Column, ForeignKey, Integer, CheckConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -14,7 +14,7 @@ class RootFolder(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     path: str = Field(unique=True, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class FolderRule(SQLModel, table=True):
@@ -22,7 +22,7 @@ class FolderRule(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     root_id: int = Field(sa_column=_fk("root_folders.id", nullable=False, index=True))
-    kind: str  # "include" | "exclude"
+    kind: str = Field(sa_column_args=(CheckConstraint("kind IN ('include', 'exclude')"),))  # "include" | "exclude"
     subpath: str  # relative to the root folder
 
 
@@ -52,7 +52,7 @@ class Book(SQLModel, table=True):
     epub_locations: Optional[str] = None
     duplicate_group: Optional[int] = Field(default=None, index=True)
     last_opened_at: Optional[datetime] = Field(default=None, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def display_title(self) -> str:
@@ -68,7 +68,7 @@ class Category(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Author(SQLModel, table=True):
@@ -76,7 +76,7 @@ class Author(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class BookCategory(SQLModel, table=True):
@@ -98,7 +98,7 @@ class ReadingProgress(SQLModel, table=True):
 
     book_id: int = Field(sa_column=_fk("books.id", primary_key=True))
     position: str  # PDF: page number as string; EPUB: CFI
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Bookmark(SQLModel, table=True):
@@ -108,14 +108,14 @@ class Bookmark(SQLModel, table=True):
     book_id: int = Field(sa_column=_fk("books.id", nullable=False, index=True))
     position: str
     label: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class SyncRun(SQLModel, table=True):
     __tablename__ = "sync_runs"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     finished_at: Optional[datetime] = None
     found: int = 0
     indexed: int = 0

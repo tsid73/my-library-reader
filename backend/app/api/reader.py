@@ -27,6 +27,7 @@ def _safe(book, session: Session) -> str:
 
 
 @router.get("/books/{book_id}/file")
+@router.get("/books/{book_id}/file.epub")
 def book_file(book_id: int, session: Session = Depends(get_session)):
     book = get_book(book_id, session)
     if not os.path.isfile(book.abs_path):

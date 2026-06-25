@@ -17,6 +17,7 @@ export default function ReaderPage() {
   const [initialPos, setInitialPos] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [resetKey, setResetKey] = useState(0);
+  const openedRef = useRef<number | null>(null);
 
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem("reader.theme") as Theme) || "light"
@@ -81,7 +82,10 @@ export default function ReaderPage() {
         const detail = await get<BookDetail>(`/books/${bookId}`);
         setBook(detail);
         document.title = detail.title;
-        await post(`/books/${bookId}/open`);
+        if (openedRef.current !== bookId) {
+          openedRef.current = bookId;
+          await post(`/books/${bookId}/open`);
+        }
         if (detail.format === "pdf" || detail.format === "epub") {
           const prog = await get<ProgressInfo>(`/books/${bookId}/progress`);
           setInitialPos(prog.position);
@@ -134,9 +138,12 @@ export default function ReaderPage() {
   const addBookmark = async () => {
     const pos = handleRef.current?.currentPosition();
     if (!pos) return;
+    const label = prompt("Enter a label for this bookmark (optional):");
+    if (label === null) return;
     try {
       const bm = await post<Bookmark>(`/books/${bookId}/bookmarks`, {
         position: pos,
+        label: label.trim() || undefined,
       });
       setBookmarks((b) => [...b, bm]);
     } catch (e) {
@@ -367,9 +374,9 @@ export default function ReaderPage() {
                     className="bm-jump"
                     onClick={() => jumpToBookmark(bm.position)}
                   >
-                    {book.format === "pdf"
+                    {bm.label || (book.format === "pdf"
                       ? `Page ${bm.position}`
-                      : "Saved location"}
+                      : "Saved location")}
                   </button>
                   <button
                     className="icon-btn small"

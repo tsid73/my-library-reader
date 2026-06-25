@@ -19,23 +19,29 @@ export default function ManageEntitiesPage({ kind, label }: Props) {
   const [editing, setEditing] = useState<BookCardT | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const LIMIT = 50;
 
   const browseKind = kind; // /browse/categories or /browse/authors
 
-  const load = useCallback(() => {
+  const load = useCallback((append = false) => {
     setError(null);
     Promise.all([
-      get<BrowseResponse>(`/browse/${browseKind}`).then((r) => setGroups(r.groups)),
+      get<BrowseResponse & { total: number }>(`/browse/${browseKind}?limit=${LIMIT}&offset=${append ? offset : 0}`).then((r) => {
+        if (append) setGroups(prev => [...prev, ...r.groups]);
+        else setGroups(r.groups);
+        setTotal(r.total);
+      }),
       get<Entity[]>(`/${kind}`).then(setEntities),
     ])
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [kind, browseKind]);
+  }, [kind, browseKind, offset]);
 
   useEffect(() => {
-    load();
-    setExpanded(new Set());
-  }, [load]);
+    load(offset > 0);
+  }, [load, offset]);
 
   const create = async () => {
     const name = newName.trim();
@@ -221,6 +227,14 @@ export default function ManageEntitiesPage({ kind, label }: Props) {
           )}
         </section>
       ))}
+
+      {!loading && !error && groups.length > 0 && total > groups.length && (
+        <div style={{ textAlign: "center", margin: "2rem 0" }}>
+          <button className="btn" onClick={() => setOffset((o) => o + LIMIT)}>
+            Load more {label.toLowerCase()}s
+          </button>
+        </div>
+      )}
 
       {editing && (
         <MetadataModal

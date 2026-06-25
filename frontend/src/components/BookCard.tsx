@@ -42,7 +42,7 @@ export default function BookCard({
           <img
             className="cover"
             src={`/api/books/${book.id}/cover`}
-            alt=""
+            alt={displayTitle}
             loading="lazy"
             onError={() => setCoverFailed(true)}
           />

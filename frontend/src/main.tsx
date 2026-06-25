@@ -7,12 +7,13 @@ import LibraryPage from "./pages/LibraryPage";
 import ManageEntitiesPage from "./pages/ManageEntitiesPage";
 import ReaderPage from "./pages/ReaderPage";
 import RecentPage from "./pages/RecentPage";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./styles.css";
 
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <App />,
+    element: <ErrorBoundary><App /></ErrorBoundary>,
     children: [
       { index: true, element: <LibraryPage /> },
       { path: "recent", element: <RecentPage /> },
@@ -27,7 +28,7 @@ const router = createBrowserRouter([
       },
     ],
   },
-  { path: "/read/:id", element: <ReaderPage /> },
+  { path: "/read/:id", element: <ErrorBoundary><ReaderPage /></ErrorBoundary> },
 ]);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

@@ -16,13 +16,22 @@ export default function LibraryPage() {
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(
     null
   );
-  const [filters, setFilters] = useState({
-    format: "",
-    folders: [] as string[],
-    author: "",
-    category: "",
+  const [filters, setFilters] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("library.filters") || "") || { format: "", folders: [], author: "", category: "" };
+    } catch {
+      return { format: "", folders: [], author: "", category: "" };
+    }
   });
-  const [sort, setSort] = useState<"title" | "recent">("title");
+  const [sort, setSort] = useState<"title" | "recent">(
+    () => (localStorage.getItem("library.sort") as "title" | "recent") || "title"
+  );
+  
+  useEffect(() => localStorage.setItem("library.filters", JSON.stringify(filters)), [filters]);
+  useEffect(() => localStorage.setItem("library.sort", sort), [sort]);
+
+  const [offset, setOffset] = useState(0);
+  const LIMIT = 50;
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState<BookCardT[] | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -43,25 +52,45 @@ export default function LibraryPage() {
       .catch(() => setRoots([]));
   }, []);
 
-  const loadLibrary = useCallback(() => {
+  const loadLibrary = useCallback((append = false) => {
     const params = new URLSearchParams();
     if (filters.format) params.set("format", filters.format);
     filters.folders.forEach((folder) => params.append("folder", folder));
     if (filters.author) params.set("author", filters.author);
     if (filters.category) params.set("category", filters.category);
     params.set("sort", sort);
+    params.set("limit", String(LIMIT));
+    params.set("offset", String(append ? offset : 0));
     setLibraryError(null);
     get<LibraryResponse>(`/library?${params}`)
-      .then(setLibrary)
+      .then((res) => {
+        if (append) {
+          setLibrary((prev) => {
+            if (!prev) return res;
+            const newSections = [...prev.sections];
+            for (const sec of res.sections) {
+              const existing = newSections.find((s) => s.folder === sec.folder);
+              if (existing) {
+                existing.books = [...existing.books, ...sec.books];
+              } else {
+                newSections.push(sec);
+              }
+            }
+            return { sections: newSections, total: res.total };
+          });
+        } else {
+          setLibrary(res);
+        }
+      })
       .catch((e) => setLibraryError((e as Error).message));
     get<FilterOptions>("/library/filters")
       .then(setFilterOptions)
       .catch(() => {});
-  }, [filters, sort]);
+  }, [filters, sort, offset]);
 
   useEffect(() => {
-    loadLibrary();
-  }, [loadLibrary]);
+    loadLibrary(offset > 0);
+  }, [loadLibrary, offset]);
 
   useEffect(() => {
     loadRoots();
@@ -101,7 +130,10 @@ export default function LibraryPage() {
     <select
       className="filter-select"
       value={filters[key]}
-      onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
+      onChange={(e) => {
+        setFilters({ ...filters, [key]: e.target.value });
+        setOffset(0);
+      }}
       title={label}
     >
       <option value="">{label}: all</option>
@@ -131,6 +163,7 @@ export default function LibraryPage() {
         ? current.folders
         : [...current.folders, value],
     }));
+    setOffset(0);
     setFolderSearch("");
   };
   const removeFolder = (value: string) => {
@@ -138,6 +171,7 @@ export default function LibraryPage() {
       ...current,
       folders: current.folders.filter((f) => f !== value),
     }));
+    setOffset(0);
   };
 
   return (
@@ -209,7 +243,10 @@ export default function LibraryPage() {
         )}
         <select
           value={sort}
-          onChange={(e) => setSort(e.target.value as "title" | "recent")}
+          onChange={(e) => {
+            setSort(e.target.value as "title" | "recent");
+            setOffset(0);
+          }}
           title="Sort"
         >
           <option value="title">Sort: title</option>
@@ -300,6 +337,13 @@ export default function LibraryPage() {
               </div>
             </section>
           ))}
+          {library && library.total > library.sections.reduce((acc, sec) => acc + sec.books.length, 0) && (
+            <div style={{ textAlign: "center", margin: "2rem 0" }}>
+              <button className="btn" onClick={() => setOffset((o) => o + LIMIT)}>
+                Load more books
+              </button>
+            </div>
+          )}
         </>
       )}
 

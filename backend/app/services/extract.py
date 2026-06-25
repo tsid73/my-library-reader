@@ -18,6 +18,7 @@ class ExtractError(Exception):
 class Extracted:
     title: Optional[str] = None
     author: Optional[str] = None
+    series: Optional[str] = None
     cover_bytes: Optional[bytes] = None  # raw image data, any format
 
 
@@ -51,6 +52,14 @@ def extract_epub(path: str) -> Extracted:
         creators = book.get_metadata("DC", "creator")
         if creators:
             result.author = str(creators[0][0]).strip() or None
+            
+        series_meta = book.get_metadata("OPF", "meta")
+        if series_meta:
+            for item in series_meta:
+                if isinstance(item, tuple) and len(item) > 1 and isinstance(item[1], dict):
+                    # Calibre series: <meta name="calibre:series" content="Name"/>
+                    if item[1].get("name") == "calibre:series":
+                        result.series = str(item[1].get("content")).strip() or None
     except Exception:
         pass  # metadata is optional; cover may still work
 

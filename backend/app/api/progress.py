@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -35,7 +35,7 @@ def save_progress(
     progress = session.get(ReadingProgress, book_id)
     if progress:
         progress.position = body.position
-        progress.updated_at = datetime.utcnow()
+        progress.updated_at = datetime.now(timezone.utc)
     else:
         progress = ReadingProgress(book_id=book_id, position=body.position)
     session.add(progress)

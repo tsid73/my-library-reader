@@ -1,7 +1,7 @@
 import os
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from sqlmodel import Session, select
@@ -52,7 +52,7 @@ class SyncProgress:
             "skipped": self.skipped,
             "deleted": self.deleted,
             "failed": self.failed,
-            "errors": self.errors,
+            "errors": list(self.errors),
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "fatal_error": self.fatal_error,
@@ -82,7 +82,7 @@ class SyncManager:
             self.progress = SyncProgress(
                 running=True,
                 run_id=run_id,
-                started_at=datetime.utcnow().isoformat(),
+                started_at=datetime.now(timezone.utc).isoformat(),
             )
             self._thread = threading.Thread(
                 target=self._run, args=(engine, run_id, only_root_id), daemon=True
@@ -104,12 +104,17 @@ class SyncManager:
         if thread is not None:
             thread.join()
 
+    def get_progress_dict(self) -> dict:
+        with self._lock:
+            return self.progress.to_dict()
+
     # ----- worker -----
 
     def _record_error(self, session: Session, run_id: int, path: str, message: str):
         session.add(SyncError(run_id=run_id, file_path=path, message=message))
         session.commit()
-        self.progress.errors.append({"file_path": path, "message": message})
+        with self._lock:
+            self.progress.errors.append({"file_path": path, "message": message})
 
     def _run(self, engine, run_id: int, only_root_id: Optional[int] = None) -> None:
         p = self.progress
@@ -130,12 +135,12 @@ class SyncManager:
             p.running = False
             p.current_folder = ""
             p.current_file = ""
-            p.finished_at = datetime.utcnow().isoformat()
+            p.finished_at = datetime.now(timezone.utc).isoformat()
             try:
                 with Session(engine) as session:
                     run = session.get(SyncRun, run_id)
                     if run:
-                        run.finished_at = datetime.utcnow()
+                        run.finished_at = datetime.now(timezone.utc)
                         run.found = p.found
                         run.indexed = p.indexed
                         run.skipped = p.skipped
@@ -145,6 +150,9 @@ class SyncManager:
                         session.commit()
             except Exception:
                 pass
+            
+            from .covers import start_prefetch_covers
+            start_prefetch_covers(engine)
 
     def _sync(
         self, session: Session, run_id: int, only_root_id: Optional[int] = None
@@ -285,6 +293,8 @@ class SyncManager:
         book.meta_title = ex.title or None
         if ex.author and not book.cleaned_author:
             book.cleaned_author = ex.author
+        if ex.series and not book.edited_series:
+            book.edited_series = ex.series
 
     def _insert_new(
         self, session: Session, run_id: int, root_id: int, sf: ScannedFile, file_hash: str

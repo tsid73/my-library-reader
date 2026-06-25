@@ -13,7 +13,9 @@ def partial_hash(path: str) -> str:
     h.update(str(size).encode())
     with open(path, "rb") as f:
         h.update(f.read(CHUNK))
-        if size > 2 * CHUNK:
+        if size > 3 * CHUNK:
+            f.seek(size // 2, os.SEEK_SET)
+            h.update(f.read(CHUNK))
             f.seek(-CHUNK, os.SEEK_END)
             h.update(f.read(CHUNK))
         elif size > CHUNK:

@@ -11,7 +11,7 @@ and HTML.
   themes, and font/zoom controls
 - 🔄 Background sync with live progress; detects new, changed, renamed, and
   deleted files
-- ✏️ Editable metadata (title / authors / categories) + cover replace, stored
+- ✏️ Editable metadata (title / authors / categories / series) + cover replace, stored
   in SQLite (your original files are never modified)
 - 💾 Backup & restore of your metadata, bookmarks, and reading progress
 

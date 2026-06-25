@@ -68,6 +68,7 @@ export default function MetadataModal({
 }) {
   const [detail, setDetail] = useState<BookDetail | null>(null);
   const [title, setTitle] = useState("");
+  const [series, setSeries] = useState("");
   const [authors, setAuthors] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [coverBust, setCoverBust] = useState(Date.now());
@@ -79,6 +80,7 @@ export default function MetadataModal({
       .then((d) => {
         setDetail(d);
         setTitle(d.edited_title ?? d.cleaned_title);
+        setSeries(d.edited_series ?? "");
         setAuthors((d.authors as Entity[]).map((a) => a.name));
         setCategories((d.categories as Entity[]).map((c) => c.name));
       })
@@ -94,6 +96,7 @@ export default function MetadataModal({
     try {
       await patch(`/books/${bookId}`, {
         edited_title: title.trim() || null,
+        edited_series: series.trim() || null,
       });
       await put(`/books/${bookId}/authors`, { names: authors });
       await put(`/books/${bookId}/categories`, { names: categories });
@@ -202,6 +205,10 @@ export default function MetadataModal({
                     )}
                 </div>
               )}
+            </label>
+            <label className="field">
+              <span>Series</span>
+              <input value={series} onChange={(e) => setSeries(e.target.value)} />
             </label>
             <TagInput
               label="Authors"

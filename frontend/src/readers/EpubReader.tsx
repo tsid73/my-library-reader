@@ -100,14 +100,7 @@ const EpubReader = forwardRef<ReaderHandle, Props>(function EpubReader(
 
     (async () => {
       try {
-        // Fetch the archive as bytes — passing the extensionless URL makes
-        // epub.js treat it as an unpacked directory and 404.
-        const res = await fetch(`/api/books/${bookId}/file`);
-        if (!res.ok) throw new Error(`server returned ${res.status}`);
-        const buffer = await res.arrayBuffer();
-        if (cancelled) return;
-
-        book = ePub(buffer as any);
+        book = ePub(`/api/books/${bookId}/file.epub`);
         bookRef.current = book;
         await renderWithMode(mode);
         if (cancelled) return;

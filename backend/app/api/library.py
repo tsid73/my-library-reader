@@ -3,7 +3,7 @@ from pathlib import PurePosixPath
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, select, func
 
 from ..db import get_session
 from ..models import (
@@ -62,6 +62,8 @@ def library(
     author: Optional[str] = None,
     category: Optional[str] = None,
     sort: str = Query("title", pattern="^(title|recent)$"),
+    limit: int = 50,
+    offset: int = 0,
     session: Session = Depends(get_session),
 ):
     stmt = select(Book)
@@ -89,6 +91,9 @@ def library(
     else:
         books.sort(key=lambda b: b.display_title.casefold())
 
+    total = len(books)
+    books = books[offset: offset + limit]
+
     roots = {r.id: r.path for r in session.exec(select(RootFolder)).all()}
     authors_map, categories_map = taxonomy_maps(session, [b.id for b in books])
     sections = defaultdict(list)
@@ -108,7 +113,7 @@ def library(
             }
             for folder_path, items in sorted(sections.items())
         ],
-        "total": len(books),
+        "total": total,
     }
 
 
@@ -181,11 +186,38 @@ def search(q: str, session: Session = Depends(get_session)):
 
 # ---- Author / Category browse views (from first-class entities) ----
 
-def _browse_by_links(session: Session, entity_model, link_model, link_entity_col):
+def _browse_by_links(session: Session, entity_model, link_model, link_entity_col, limit: int, offset: int):
     """Group books under each entity (Author/Category), plus an 'Unknown'
     bucket for books with none."""
-    entities = session.exec(select(entity_model).order_by(entity_model.name)).all()
-    all_books = {b.id: b for b in session.exec(select(Book)).all()}
+    entities = session.exec(
+        select(entity_model)
+        .order_by(entity_model.name)
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    
+    total = session.exec(select(func.count(entity_model.id))).one()
+
+    # Get only books for these specific entities to save memory
+    entity_ids = [e.id for e in entities]
+    book_ids = session.exec(
+        select(link_model.book_id).where(link_entity_col.in_(entity_ids))
+    ).all()
+    
+    # If offset == 0, we can also include the Unknown bucket
+    unknown_book_ids = []
+    if offset == 0:
+        assigned_all = set(session.exec(select(link_model.book_id)).all())
+        all_book_ids = set(session.exec(select(Book.id)).all())
+        unknown_book_ids = list(all_book_ids - assigned_all)
+        
+    all_needed_book_ids = set(book_ids + unknown_book_ids)
+    
+    if all_needed_book_ids:
+        all_books = {b.id: b for b in session.exec(select(Book).where(Book.id.in_(all_needed_book_ids))).all()}
+    else:
+        all_books = {}
+        
     authors_map, categories_map = taxonomy_maps(session, list(all_books))
 
     groups = []
@@ -213,16 +245,14 @@ def _browse_by_links(session: Session, entity_model, link_model, link_entity_col
         ]
         groups.append({"id": None, "name": "Unknown",
                        "count": len(cards), "books": cards})
-    return groups
+    return {"groups": groups, "total": total + (1 if unknown else 0)}
 
 
 @router.get("/browse/authors")
-def browse_authors(session: Session = Depends(get_session)):
-    return {"groups": _browse_by_links(session, Author, BookAuthor, BookAuthor.author_id)}
+def browse_authors(limit: int = 50, offset: int = 0, session: Session = Depends(get_session)):
+    return _browse_by_links(session, Author, BookAuthor, BookAuthor.author_id, limit, offset)
 
 
 @router.get("/browse/categories")
-def browse_categories(session: Session = Depends(get_session)):
-    return {
-        "groups": _browse_by_links(session, Category, BookCategory, BookCategory.category_id)
-    }
+def browse_categories(limit: int = 50, offset: int = 0, session: Session = Depends(get_session)):
+    return _browse_by_links(session, Category, BookCategory, BookCategory.category_id, limit, offset)

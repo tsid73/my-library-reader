@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -20,6 +20,7 @@ router = APIRouter()
 
 class MetadataUpdate(BaseModel):
     edited_title: Optional[str] = None
+    edited_series: Optional[str] = None
 
 
 class NamesUpdate(BaseModel):
@@ -33,9 +34,9 @@ def get_book(book_id: int, session: Session) -> Book:
     return book
 
 
-def _reindex(session: Session) -> None:
+def _reindex_book(session: Session, book: Book) -> None:
     recompute_duplicates(session)
-    search.rebuild_index(session)
+    search.update_index_for_book(session, book)
 
 
 @router.get("/books/{book_id}")
@@ -52,9 +53,12 @@ def update_metadata(
     if "edited_title" in data:
         value = data["edited_title"]
         book.edited_title = value.strip() if value else None
+    if "edited_series" in data:
+        value = data["edited_series"]
+        book.edited_series = value.strip() if value else None
     session.add(book)
     session.commit()
-    _reindex(session)
+    _reindex_book(session, book)
     session.refresh(book)
     return book_detail(book, session)
 
@@ -63,22 +67,22 @@ def update_metadata(
 def set_authors(
     book_id: int, body: NamesUpdate, session: Session = Depends(get_session)
 ):
-    get_book(book_id, session)
+    book = get_book(book_id, session)
     ids = [
         taxonomy.get_or_create_author(session, n).id
         for n in body.names
         if n.strip()
     ]
     taxonomy.set_book_authors(session, book_id, ids)
-    _reindex(session)
-    return book_detail(get_book(book_id, session), session)
+    _reindex_book(session, book)
+    return book_detail(book, session)
 
 
 @router.put("/books/{book_id}/categories")
 def set_categories(
     book_id: int, body: NamesUpdate, session: Session = Depends(get_session)
 ):
-    get_book(book_id, session)
+    book = get_book(book_id, session)
     ids = [
         taxonomy.get_or_create_category(session, n).id
         for n in body.names
@@ -87,14 +91,14 @@ def set_categories(
     taxonomy.set_book_categories(session, book_id, ids)
     # Keep the FTS category column in sync so search reflects the edit (authors
     # already do this; categories were previously missed).
-    search.rebuild_index(session)
-    return book_detail(get_book(book_id, session), session)
+    _reindex_book(session, book)
+    return book_detail(book, session)
 
 
 @router.post("/books/{book_id}/open")
 def mark_opened(book_id: int, session: Session = Depends(get_session)):
     book = get_book(book_id, session)
-    book.last_opened_at = datetime.utcnow()
+    book.last_opened_at = datetime.now(timezone.utc)
     session.add(book)
     session.commit()
     return {"ok": True}
