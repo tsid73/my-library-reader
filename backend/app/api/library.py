@@ -89,7 +89,7 @@ def library(
             )
         )
     else:
-        books.sort(key=lambda b: b.display_title.casefold())
+        books.sort(key=lambda b: (b.folder_path.casefold(), b.display_title.casefold()))
 
     total = len(books)
     books = books[offset: offset + limit]
@@ -98,7 +98,10 @@ def library(
     authors_map, categories_map = taxonomy_maps(session, [b.id for b in books])
     sections = defaultdict(list)
     folder_root: dict[str, int] = {}
+    ordered_folders = []
     for b in books:
+        if b.folder_path not in sections:
+            ordered_folders.append(b.folder_path)
         card = book_card(b, authors_map.get(b.id, []), categories_map.get(b.id, []))
         sections[b.folder_path].append(card)
         folder_root[b.folder_path] = b.root_id
@@ -109,9 +112,9 @@ def library(
                 "crumbs": folder_crumbs(
                     folder_path, roots.get(folder_root[folder_path], folder_path)
                 ),
-                "books": items,
+                "books": sections[folder_path],
             }
-            for folder_path, items in sorted(sections.items())
+            for folder_path in ordered_folders
         ],
         "total": total,
     }

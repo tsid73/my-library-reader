@@ -26,6 +26,7 @@ export interface BookDetail extends BookCard {
   cleaned_author: string | null;
   edited_title: string | null;
   edited_author: string | null;
+  edited_series: string | null;
 }
 
 export interface Section {

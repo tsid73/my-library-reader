@@ -16,11 +16,13 @@ export default function LibraryPage() {
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(
     null
   );
-  const [filters, setFilters] = useState(() => {
+  const [filters, setFilters] = useState<{ format: string; folders: string[]; author: string; category: string }>(() => {
+    const defaults = { format: "", folders: [], author: "", category: "" };
     try {
-      return JSON.parse(localStorage.getItem("library.filters") || "") || { format: "", folders: [], author: "", category: "" };
+      const parsed = JSON.parse(localStorage.getItem("library.filters") || "");
+      return { ...defaults, ...(parsed || {}) };
     } catch {
-      return { format: "", folders: [], author: "", category: "" };
+      return defaults;
     }
   });
   const [sort, setSort] = useState<"title" | "recent">(
